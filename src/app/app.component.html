@@ -1,0 +1,69 @@
+<main class="shell">
+	<header class="hero">
+		<div>
+			<p class="eyebrow">DOM-first reference implementation</p>
+			<h1>Semantic UI parser</h1>
+		</div>
+		<p class="lede">Separate roots, semantic context, explicit controls, and replayable events.</p>
+	</header>
+
+	<section class="principles" aria-label="Parser rules">
+		<article><strong>Semantic tree</strong><span>Structure stays explicit; presentational wrappers disappear.</span></article>
+		<article><strong>Controls are contracts</strong><span>Handlers choose atomicity and expose tools.</span></article>
+		<article><strong>Roots are isolated</strong><span>Tabs and portals are captured independently.</span></article>
+	</section>
+
+	<section class="examples" #tabRoot aria-label="Invoices">
+		<div class="section-heading"><p class="eyebrow">tab root: tab-invoices</p><h2>Invoice workspace</h2><p>Table cells retain their nested controls. Expand is a non-atomic container.</p></div>
+		<article class="example">
+			<div class="example-meta"><span class="index">01</span><div><h3>Invoice list</h3><p>Semantic table → row → cell → button.</p></div></div>
+			<div class="example-output">
+				<div class="preview"><div #invoiceExample><table><caption>Outstanding invoices</caption><thead><tr><th>Customer</th><th>Amount</th><th>Action</th></tr></thead><tbody><tr><td>Northstar</td><td>$2,400</td><td><button type="button" (click)="actionMessage = 'Invoice opened.'">Open</button></td></tr></tbody></table></div></div>
+				<div class="code-panel" data-parser-ignore><span class="code-label">HTML</span><pre>{{ invoiceHtml }}</pre></div>
+				<div class="code-panel output" data-parser-ignore><div class="code-panel-heading"><span class="code-label">Parsed JSON</span><button class="icon-button" type="button" [attr.aria-label]="copiedJson === 'invoice' ? 'JSON copied' : 'Copy JSON'" [attr.title]="copiedJson === 'invoice' ? 'Copied' : 'Copy JSON'" (click)="copyJson('invoice', invoiceJson)"><lucide-icon [img]="copiedJson === 'invoice' ? checkIcon : copyIcon" [size]="16" aria-hidden="true" /></button></div><pre class="json-output">{{ invoiceJson }}</pre></div>
+			</div>
+		</article>
+		<article class="example">
+			<div class="example-meta"><span class="index">02</span><div><h3>Expanded details</h3><p>Non-atomic containers preserve their text and descendants.</p></div></div>
+			<div class="example-output">
+				<div class="preview"><div #expandExample><section class="expand-preview" aria-label="Payment details"><strong>Payment details <span>-</span></strong><p>Due on 14 September. <button type="button" (click)="actionMessage = 'Reminder scheduled.'">Schedule reminder</button></p></section></div></div>
+				<div class="code-panel" data-parser-ignore><span class="code-label">HTML</span><pre>{{ expandHtml }}</pre></div>
+				<div class="code-panel output" data-parser-ignore><div class="code-panel-heading"><span class="code-label">Parsed JSON</span><button class="icon-button" type="button" [attr.aria-label]="copiedJson === 'expand' ? 'JSON copied' : 'Copy JSON'" [attr.title]="copiedJson === 'expand' ? 'Copied' : 'Copy JSON'" (click)="copyJson('expand', expandJson)"><lucide-icon [img]="copiedJson === 'expand' ? checkIcon : copyIcon" [size]="16" aria-hidden="true" /></button></div><pre class="json-output">{{ expandJson }}</pre></div>
+			</div>
+		</article>
+		<article class="example">
+			<div class="example-meta"><span class="index">03</span><div><h3>Trigger to portal relation</h3><p><code>aria-controls</code> preserves a link to a popup without nesting the popup under its trigger.</p></div></div>
+			<div class="example-output">
+				<div class="preview"><div #relationExample><button type="button" aria-controls="invoice-menu" [attr.aria-expanded]="popupOpen" (click)="popupOpen = !popupOpen">Invoice actions</button></div></div>
+				<div class="code-panel" data-parser-ignore><span class="code-label">HTML</span><pre>{{ relationHtml }}</pre></div>
+				<div class="code-panel output" data-parser-ignore><div class="code-panel-heading"><span class="code-label">Parsed JSON</span><button class="icon-button" type="button" [attr.aria-label]="copiedJson === 'controls' ? 'JSON copied' : 'Copy JSON'" [attr.title]="copiedJson === 'controls' ? 'Copied' : 'Copy JSON'" (click)="copyJson('controls', relationJson)"><lucide-icon [img]="copiedJson === 'controls' ? checkIcon : copyIcon" [size]="16" aria-hidden="true" /></button></div><pre class="json-output">{{ relationJson }}</pre></div>
+			</div>
+		</article>
+		<article class="example">
+			<div class="example-meta"><span class="index">04</span><div><h3>Multi-part accessible name</h3><p><code>aria-labelledby</code> joins several target text nodes into a meaningful container label.</p></div></div>
+			<div class="example-output">
+				<div class="preview"><div #labelledByExample><div class="labelledby-preview"><div class="invoice-title"><span id="invoice-customer">Northstar</span><span id="invoice-number">#184</span></div><section aria-labelledby="invoice-customer invoice-number"><p>Payment is due on 14 September.</p><button type="button" (click)="actionMessage = 'Invoice #184 opened.'">Open invoice</button></section></div></div></div>
+				<div class="code-panel" data-parser-ignore><span class="code-label">HTML</span><pre>{{ labelledByHtml }}</pre></div>
+				<div class="code-panel output" data-parser-ignore><div class="code-panel-heading"><span class="code-label">Parsed JSON</span><button class="icon-button" type="button" [attr.aria-label]="copiedJson === 'labelledby' ? 'JSON copied' : 'Copy JSON'" [attr.title]="copiedJson === 'labelledby' ? 'Copied' : 'Copy JSON'" (click)="copyJson('labelledby', labelledByJson)"><lucide-icon [img]="copiedJson === 'labelledby' ? checkIcon : copyIcon" [size]="16" aria-hidden="true" /></button></div><pre class="json-output">{{ labelledByJson }}</pre></div>
+			</div>
+		</article>
+	</section>
+
+	<section class="examples" #popupRoot aria-label="Invoice actions popup">
+		<div class="section-heading"><p class="eyebrow">portal root: popup-actions</p><h2>Portal context</h2><p>Rendered outside a tab, but parsed and acted on as its own root.</p></div>
+		<article class="example">
+			<div class="example-output">
+				<div class="preview"><div #popupExample id="invoice-menu" class="portal-preview" role="menu" *ngIf="popupOpen"><span class="portal-label">Popup: invoice #184</span><button type="button" (click)="actionMessage = 'Invoice sent.'">Send invoice</button><button type="button" (click)="popupOpen = false">Dismiss</button></div></div>
+				<div class="code-panel" data-parser-ignore><span class="code-label">HTML</span><pre>{{ popupHtml }}</pre></div>
+				<div class="code-panel output" data-parser-ignore><div class="code-panel-heading"><span class="code-label">Parsed JSON</span><button class="icon-button" type="button" [attr.aria-label]="copiedJson === 'popup' ? 'JSON copied' : 'Copy JSON'" [attr.title]="copiedJson === 'popup' ? 'Copied' : 'Copy JSON'" (click)="copyJson('popup', popupJson)"><lucide-icon [img]="copiedJson === 'popup' ? checkIcon : copyIcon" [size]="16" aria-hidden="true" /></button></div><pre class="json-output">{{ popupJson }}</pre></div>
+			</div>
+		</article>
+	</section>
+
+	<section class="examples">
+		<div class="section-heading"><p class="eyebrow">capture and replay</p><h2>Event envelope</h2><p>Use a captured control id to invoke the registered handler after an LLM chooses a tool.</p></div>
+		<p class="example-meta">{{ actionMessage }}</p>
+		<button type="button" (click)="dispatchLatest()">Replay latest event</button>
+		<div class="code-grid" data-parser-ignore><div class="code-panel"><span class="code-label">last event</span><pre>{{ parser.lastEvent() | json }}</pre></div><div class="code-panel output"><span class="code-label">snapshot</span><pre>{{ snapshotJson() }}</pre></div></div>
+	</section>
+</main>
