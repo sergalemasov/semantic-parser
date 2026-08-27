@@ -5,7 +5,6 @@ import { nativeControlHandlers } from './native-control-handlers';
 
 export interface ParserRoot {
   id: string;
-  kind: UiRoot['kind'];
   element: HTMLElement;
   name?: string;
   ignored?: (mutation: MutationRecord) => boolean;

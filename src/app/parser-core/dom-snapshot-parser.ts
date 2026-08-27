@@ -9,7 +9,6 @@ const NATIVE_CONTROLS = new Set(['button', 'input', 'select', 'textarea', 'a']);
 const CLICKABLE_ROLES = new Set(['button', 'checkbox', 'link', 'menuitem', 'option', 'radio', 'switch', 'tab', 'treeitem']);
 const CLICKABLE_ATTRIBUTES = ['onclick', 'data-action', 'data-click', 'data-testid', 'ng-click', '(click)'];
 const DEFAULT_CONTEXT_ATTRIBUTES = ['data-testid', 'data-qa', 'formcontrolname', 'name', 'title'];
-const DEFAULT_GROUP_ATTRIBUTES = ['data-parser-group', 'data-ui-group', 'data-mf-group'];
 
 export class DomIdentityStore {
   private readonly ids = new WeakMap<Element, string>();
@@ -59,7 +58,7 @@ export class DomSnapshotParser {
     parent.childNodes.forEach((child) => {
       if (child.nodeType === Node.TEXT_NODE) {
         const text = this.normalizeText(child.textContent ?? '');
-        if (text) this.appendNode(nodes, { kind: 'content', text });
+        if (text) this.appendNode(nodes, { text });
         return;
       }
       if (child instanceof HTMLElement) {
@@ -79,39 +78,39 @@ export class DomSnapshotParser {
     const children = this.parseChildren(element);
     if (this.isPotentiallyClickable(element)) {
       return [{
-        id: this.identities.idFor(element, 'unhandled'),
-        __xpath: this.xpathOf(element), domId: this.domIdOf(element), kind: 'unhandled', tag: element.localName, role: element.getAttribute('role') ?? undefined,
-        label: this.controlName(element), __context: this.contextOf(element), relations: this.relationsOf(element), children
+        id: this.identities.idFor(element, 'unhandled'), __xpath: this.xpathOf(element), domId: this.domIdOf(element),
+        tag: element.localName, role: element.getAttribute('role') ?? undefined, label: this.controlName(element),
+        context: this.contextOf(element), relations: this.relationsOf(element), children
       }];
     }
 
     if (this.isSemantic(element)) {
       return [{
-        kind: 'semantic', domId: this.domIdOf(element), tag: element.localName,
+        domId: this.domIdOf(element), tag: element.localName,
         role: element.getAttribute('role') ?? undefined,
         label: this.hasInteractiveRole(element) ? this.controlName(element) : this.containerName(element),
-        __context: this.contextOf(element), relations: this.relationsOf(element), children
+        context: this.contextOf(element), relations: this.relationsOf(element), children
       }];
     }
 
-    if (this.isMeaningfulGroup(element)) {
+    if (this.isMeaningfulGroup(element, children)) {
       return [{
-        kind: 'group', domId: this.domIdOf(element), tag: element.localName,
-        label: this.containerName(element), __context: this.contextOf(element), relations: this.relationsOf(element), children
+        domId: this.domIdOf(element), tag: element.localName, label: this.containerName(element),
+        context: this.contextOf(element), relations: this.relationsOf(element), children
       }];
     }
 
-    // Presentation-only wrappers without a grouping signal do not consume tokens.
+    // Presentation-only wrappers with at most one parsed child do not consume tokens.
     return children;
   }
 
   private controlNode(element: HTMLElement, handler: ControlHandler): UiControlNode {
     const id = this.identities.idFor(element, 'control');
-    const control = handler.parse(element);
+    const { context: handlerContext, ...control } = handler.parse(element);
     return {
-      id, __xpath: this.xpathOf(element), domId: this.domIdOf(element), kind: 'control', tag: element.localName, label: this.controlName(element),
+      id, __xpath: this.xpathOf(element), domId: this.domIdOf(element), tag: element.localName, label: this.controlName(element),
       description: this.controlDescription(element),
-      __context: this.contextOf(element), relations: this.relationsOf(element), control,
+      context: this.mergeContext(this.contextOf(element), handlerContext), relations: this.relationsOf(element), control,
       children: control.__atomic ? undefined : this.parseChildren(element)
     };
   }
@@ -172,8 +171,7 @@ export class DomSnapshotParser {
   ): UiNode['relations'] extends Array<infer Relation> | undefined ? Relation | undefined : never {
     const targetDomIds = this.referencedIds(element, attribute);
     if (!targetDomIds.length) return undefined;
-    const text = attribute === 'aria-labelledby' ? this.referencedText(element, attribute) : undefined;
-    return { type, targetDomIds, ...(text ? { text } : {}) };
+    return { type, targetDomIds };
   }
 
   private referencedText(element: HTMLElement, attribute: 'aria-labelledby' | 'aria-describedby'): string | undefined {
@@ -195,12 +193,22 @@ export class DomSnapshotParser {
     return Array.from(root.querySelectorAll<HTMLElement>('[id]')).find((candidate) => candidate.id === id);
   }
 
-  private contextOf(element: HTMLElement): Record<string, string> | undefined {
+  private contextOf(element: HTMLElement): Record<string, unknown> | undefined {
     const names = this.options.contextAttributes ?? DEFAULT_CONTEXT_ATTRIBUTES;
     const context = Object.fromEntries(names.flatMap((name) => {
       const value = element.getAttribute(name);
-      return value ? [[name, value]] : [];
+      if (!value) return [];
+      const key = name === 'aria-expanded' ? 'expanded' : name.replace(/^data-/, '').replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
+      return [[key, name === 'aria-expanded' ? value === 'true' : value]];
     }));
+    return Object.keys(context).length ? context : undefined;
+  }
+
+  private mergeContext(
+    attributeContext: Record<string, unknown> | undefined,
+    handlerContext: Record<string, unknown> | undefined
+  ): Record<string, unknown> | undefined {
+    const context = { ...attributeContext, ...handlerContext };
     return Object.keys(context).length ? context : undefined;
   }
 
@@ -250,14 +258,8 @@ export class DomSnapshotParser {
     return role !== null && CLICKABLE_ROLES.has(role);
   }
 
-  private isMeaningfulGroup(element: HTMLElement): boolean {
-    if (element.localName !== 'div') return false;
-    const attributes = this.options.groupAttributes ?? DEFAULT_GROUP_ATTRIBUTES;
-    if (attributes.some((attribute) => element.hasAttribute(attribute))) return true;
-
-    return Array.from(element.children).filter((child) => child instanceof HTMLElement).filter((child) =>
-      this.registry.find(child) !== undefined || NATIVE_CONTROLS.has(child.localName) || this.isSemantic(child)
-    ).length >= 2;
+  private isMeaningfulGroup(element: HTMLElement, children: UiTreeNode[]): boolean {
+    return (element.localName === 'div' || element.localName === 'span') && children.length > 1;
   }
 
   private isHidden(element: HTMLElement): boolean {
@@ -283,11 +285,15 @@ export class DomSnapshotParser {
 
   private appendNode(nodes: UiTreeNode[], node: UiTreeNode): void {
     const previous = nodes[nodes.length - 1];
-    if (previous?.kind === 'content' && node.kind === 'content') {
+    if (this.isTextNode(previous) && this.isTextNode(node)) {
       previous.text = `${previous.text ?? ''} ${node.text ?? ''}`.trim();
       return;
     }
     nodes.push(node);
+  }
+
+  private isTextNode(node: UiTreeNode | undefined): node is UiNode {
+    return node !== undefined && node.text !== undefined && node.tag === undefined && !('control' in node) && !('id' in node);
   }
 
   private prefixFor(element: HTMLElement): 'control' | 'unhandled' | undefined {

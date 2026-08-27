@@ -1,4 +1,4 @@
-# RFC: Семантический UI-парсер и протокол действий
+# RFC: Древовидный UI-парсер и протокол действий
 
 **Статус:** предлагаемая эталонная реализация. Код в `src/app/parser-core` намеренно не зависит от фреймворка; Angular отвечает за жизненный цикл, root-узлы, наблюдение и обработчики, специфичные для Taiga UI.
 
@@ -101,11 +101,9 @@ interface UiRelation {
 | `UiRelation.type` | Семантика связи: `labelledby` или `controls`. | Проверка допустимого типа связи и её интерпретация. |
 | `UiRelation.targetDomIds` | HTML id узлов, на которые указывает связь. | Валидация существования target и разрешение связи между root. |
 
-Поля с префиксом `__` являются backend-only: LLM-projection должна исключать их независимо от product-specific redaction policy. `context` содержит расширяемый прикладной контекст, нужный модели для выбора действия: например, `data-screen="invoices"` сохраняется как `{ screen: "invoices" }`, а `aria-expanded="true"` — как `{ expanded: true }`. Его значения могут поступать из allow-list `data-*` атрибутов, handler-ов или других зарегистрированных источников. `__systemContext` содержит только технические сведения parser-а и источники диагностики. Идентификатор `UiNode.id` выдаётся только интерактивным `control` и `unhandled` узлам и является action target для LLM; у `control` он совпадает с `control.id`. `__xpath` хранит точный DOM locator интерактивного элемента для логов и диагностики. `domId` содержит исходный HTML `id` любого сохранённого узла и является target-идентификатором для ARIA relations. Поэтому элемент с HTML `id` сохраняется, даже если без этой связи он был бы схлопнут как presentation-wrapper. Узел с `control` — поддерживаемый control; узел с `id`, но без `control`, — `unhandled`; узел с `text`, но без `tag`, — текстовый; остальные сохранённые узлы являются структурными и определяются по `tag` и `children`. Значимые теги (`section`, `article`, `ul`, `li`, `table`, `tr`, `td` и т. п.) сохраняются. `div` и `span` сохраняются, если имеют явный маркер `data-parser-group`, `data-ui-group` или `data-mf-group`, либо группируют две и более прямые интерактивные или структурные сущности. Например, контейнер пары `Save` / `Cancel` и строка фильтров остаются в дереве; одиночная layout-обёртка вокруг текста и кнопки схлопывается. Это даёт LLM границу намеренно объединённого UI без сохранения каждой framework-обёртки. Соседние текстовые узлы после схлопывания объединяются в один нормализованный текст.
+Поля с префиксом `__` являются backend-only: LLM-projection должна исключать их независимо от product-specific redaction policy. `context` содержит расширяемый прикладной контекст, нужный модели для выбора действия: например, `data-screen="invoices"` сохраняется как `{ screen: "invoices" }`, а `aria-expanded="true"` — как `{ expanded: true }`. Его значения могут поступать из allow-list `data-*` атрибутов, handler-ов или других зарегистрированных источников. `__systemContext` содержит только технические сведения parser-а и источники диагностики. Идентификатор `UiNode.id` выдаётся только интерактивным `control` и `unhandled` узлам и является action target для LLM; у `control` он совпадает с `control.id`. `__xpath` хранит точный DOM locator интерактивного элемента для логов и диагностики. `domId` содержит исходный HTML `id` любого сохранённого узла и является target-идентификатором для ARIA relations. Поэтому элемент с HTML `id` сохраняется, даже если без этой связи он был бы схлопнут как presentation-wrapper. Узел с `control` — поддерживаемый control; узел с `id`, но без `control`, — `unhandled`; узел с `text`, но без `tag`, — текстовый; остальные сохранённые узлы являются структурными и определяются по `tag` и `children`. Значимые HTML-теги (`section`, `article`, `nav`, `fieldset`, `ul`, `li`, `table`, `tr`, `td` и т. п.) сохраняются. Семантические WAI-ARIA контейнеры, например `[role="group"]`, `[role="region"]` и `[role="toolbar"]`, также сохраняются вместе с ролью и доступным именем. Нейтральные `div` и `span` без семантического тега, роли или ARIA-имени сохраняются как контейнер, если после рекурсивного парсинга содержат более одной дочерней ноды. При одной или нуле дочерних нод это presentation-wrapper, и его потомки поднимаются на уровень выше. Соседние текстовые узлы после схлопывания объединяются в один нормализованный текст. Для каждого контейнера, сохранённого этой эвристикой, parser добавляет backend-диагностику `{ code: "heuristic-container", severity: "info", message: "Neutral wrapper retained because it has multiple child nodes" }`.
 
-`label` не является сводкой всего descendant text. Для `control` и `unhandled` parser следует порядку accessible name: `aria-labelledby`, затем `aria-label`, связанный нативный `<label>` для labelable HTML-контрола, text content элемента и `title` только как поздний fallback. `aria-description` не является именем: он записывается в `description`; `aria-describedby` имеет перед ним приоритет при вычислении описания. У `semantic`/`group` `label` задаётся только `aria-labelledby`, `aria-label` или собственным семантическим источником: `caption` для `table`, `legend` для `fieldset`, `figcaption` для `figure`, `summary` для `details`. Контейнер без такого имени не получает `label`: его содержание выражается через `children`.
-
-Автоматическая эвристика не способна надёжно отличить layout от продуктовой группы. Для важной границы команда МФ обязана поставить один из group-маркеров и при необходимости ARIA-имя. Это правило валидируется backend-диагностикой: неразмеченная группа из нескольких интерактивных потомков помечается как эвристическая, а разметка с `data-*-group` — как явная.
+`label` не является сводкой всего descendant text. Для `control` и `unhandled` parser следует порядку accessible name: `aria-labelledby`, затем `aria-label`, связанный нативный `<label>` для labelable HTML-контрола, text content элемента и `title` только как поздний fallback. `aria-description` не является именем: он записывается в `description`; `aria-describedby` имеет перед ним приоритет при вычислении описания. У структурных контейнеров `label` задаётся только `aria-labelledby`, `aria-label` или собственным семантическим источником: `caption` для `table`, `legend` для `fieldset`, `figcaption` для `figure`, `summary` для `details`. Контейнер без такого имени не получает `label`: его содержание выражается через `children`.
 
 ### ARIA-связи вне DOM-вложенности
 
@@ -190,37 +188,66 @@ Backend получает канонический snapshot и отдельный
 
 ```ts
 interface ParserQualityEnvelope {
-  snapshotId: string;
-  __snapshotHash: string;
+  snapshotId: string; // Correlates the canonical snapshot, LLM context, and action.
+  snapshotHash: string; // Detects corruption or mismatch of the canonical snapshot.
   parserVersion: 1;
-  __applicationVersion: string;
-  __capturedAt: string;
-  __parseDurationMs: number;
-  __roots: UiRoot[];
-  __stats: {
-    rootCount: number;
-    nodeCount: number;
-    controlCount: number;
-    unhandledInteractiveCount: number;
-    tokenEstimate: number;
-  };
-  __diagnostics: ParserDiagnostic[];
-  __trigger?: Pick<UiEvent, "__eventId" | "rootId" | "controlId" | "type">;
-  __dispatch?: {
-    actionId: string;
-    result: "executed" | "rejected";
-    rejectionReason?: "root-not-found" | "control-not-found" | "tool-not-allowed" | "handler-not-found";
-  };
+  applicationVersion: string;
+  capturedAt: string;
+  parseDurationMs: number;
+  roots: UiRoot[];
+  stats: ParserQualityStats;
+  diagnostics: ParserDiagnostic[];
+  dispatch?: ParserDispatchResult;
+}
+
+interface ParserQualityStats {
+  rootCount: number;
+  nodeCount: number;
+  controlCount: number;
+  unhandledInteractiveCount: number;
+  heuristicContainerCount: number;
+  tokenEstimate: number;
+}
+
+interface ParserDiagnostic {
+  code: string; // e.g. "unhandled-interactive" or "duplicate-control-id"
+  severity: "info" | "warning" | "error";
+  rootId?: string;
+  controlId?: string;
+  message: string;
+}
+
+interface ParserDispatchResult {
+  actionId: string;
+  result: "executed" | "rejected";
+  rejectionReason?: "root-not-found" | "control-not-found" | "tool-not-allowed" | "handler-not-found";
 }
 ```
+
+`ParserQualityEnvelope` целиком backend-only, поэтому его поля не используют префикс `__`: этот префикс нужен внутри DTO, которые могут попасть в LLM-проекцию. Envelope создаётся на каждый canonical snapshot и используется в следующем порядке:
+
+1. Parser записывает `snapshotId`, `snapshotHash`, версии, время, длительность и полное `roots`.
+2. Validator рассчитывает `stats` и добавляет `diagnostics` для нарушенных инвариантов или эвристик.
+3. После попытки действия LLM executor добавляет `dispatch` к snapshot, по которому действие было принято.
+4. Backend сохраняет envelope и отправляет его в observability, связывая записи по `snapshotId` и `snapshotHash`.
+
+| Поле | Как использовать |
+| --- | --- |
+| `snapshotId`, `snapshotHash` | Связать snapshot, LLM request, action и результат dispatch; hash использовать для поиска рассинхронизации. |
+| `parserVersion`, `applicationVersion` | Сегментировать метрики и находить регрессии после выпуска parser-а или приложения. |
+| `capturedAt`, `parseDurationMs` | Контролировать задержку и P95 времени парсинга. |
+| `roots` | Анализировать исходное дерево и воспроизводить diagnostic без передачи его в LLM. |
+| `stats` | Строить дашборды размера дерева, покрытия control, числа эвристических контейнеров и token estimate. |
+| `diagnostics` | Агрегировать причины качества: неизвестный интерактивный элемент, дублирующийся id, ошибка handler-а или `heuristic-container`. |
+| `dispatch` | Измерять разрешённые и отклонённые LLM-действия, группируя причины отказа. |
 
 Backend обязан валидировать и сохранять:
 
 - Полное дерево `roots` до LLM-компактизации, включая `UiNode.id`, `__atomic`, `__systemContext` только в рамках политики хранения данных, и список `unhandled`.
 - Структурные инварианты: уникальность root/control id в рамках snapshot, отсутствие children у атомарного контрола, наличие tools у action-контрола, отсутствие неизвестного интерактивного HTML без diagnostics, отсутствие циклов и превышения лимитов глубины/узлов.
-- Семантические метрики: долю контролов с доступным именем, число схлопнутых presentation-wrapper, число и типы `unhandled`, неоднозначные matches handler-ов, число пустых semantic-узлов и разделение табов/диалогов/порталов по root.
+- Семантические метрики: долю контролов с доступным именем, число схлопнутых presentation-wrapper и эвристических контейнеров, число и типы `unhandled`, неоднозначные matches handler-ов, число пустых структурных узлов и разделение табов/диалогов/порталов по root.
 - Эксплуатационные метрики: `parseDurationMs`, token estimate канонической и LLM-проекции, размер JSON, число игнорируемых мутаций, стабильность `controlId` на соседних snapshot в рамках одной страницы, результат dispatch и причину отказа.
-- Корреляцию для Langfuse: `snapshotId`, `snapshotHash`, parser/application version, пользовательское событие, LLM action и результат исполнения. Сырым HTML/DOM сохранять нельзя по умолчанию; для отладки следует хранить разрешённый snapshot или его redacted вариант.
+- Корреляцию для Langfuse: `snapshotId`, `snapshotHash`, parser/application version, LLM action и результат исполнения. Сырым HTML/DOM сохранять нельзя по умолчанию; для отладки следует хранить разрешённый snapshot или его redacted вариант.
 
 Таким образом, LLM получает минимальный снимок для решения задачи, а backend — достаточные данные, чтобы обнаруживать регрессии обработчиков, потерю вложенных контролов, рост токенов и нарушение временного бюджета без передачи диагностического шума в prompt.
 

@@ -1,16 +1,3 @@
-/** Дискриминатор, определяющий семантику, интерактивность и форму узла дерева. */
-export type NodeKind =
-  /** Значимый HTML-элемент или ARIA-контейнер, сохраняющий семантическую структуру. */
-  | 'semantic'
-  /** Явно или эвристически выделенный контейнер, объединяющий несколько UI-потомков. */
-  | 'group'
-  /** Нормализованный видимый текст без самостоятельной семантической или action-роли. */
-  | 'content'
-  /** Интерактивный элемент с зарегистрированным handler-ом и allow-list действий. */
-  | 'control'
-  /** Интерактивный элемент без handler-а, сохранённый для диагностики без действий LLM. */
-  | 'unhandled';
-
 /** Полный канонический снимок распарсенного пользовательского интерфейса. */
 export interface UiSnapshot {
   /** Версия формата снимка для совместимости parser-а и потребителей. */
@@ -25,8 +12,6 @@ export interface UiSnapshot {
 export interface UiRoot {
   /** Стабильный в рамках приложения идентификатор области. */
   id: string;
-  /** Тип области, определяющий её место в UI и жизненный цикл. */
-  kind: 'page' | 'tab' | 'dialog' | 'popup' | 'notification';
   /** Человекочитаемое имя области, если оно известно приложению. */
   name?: string;
   /** Корневые узлы семантического дерева данной области. */
@@ -34,11 +19,9 @@ export interface UiRoot {
 }
 
 /** Общая часть любого узла семантического дерева. */
-export interface UiNode<Kind extends NodeKind = NodeKind> {
+export interface UiNode {
   /** Исходный HTML id, по которому разрешаются ARIA-связи между узлами. */
   domId?: string;
-  /** Дискриминатор варианта узла. */
-  kind: Kind;
   /** Исходный HTML-тег, когда узел был создан из элемента. */
   tag?: string;
   /** Явно заданная ARIA-роль элемента. */
@@ -47,10 +30,12 @@ export interface UiNode<Kind extends NodeKind = NodeKind> {
   label?: string;
   /** Доступное описание элемента, отдельное от его имени. */
   description?: string;
-  /** Нормализованный видимый текст content-узла. */
+  /** Нормализованный видимый текст текстового узла. */
   text?: string;
-  /** Прикладные диагностические атрибуты; не передаются LLM. */
-  __context?: Record<string, string>;
+  /** Расширяемый прикладной контекст, доступный LLM. */
+  context?: Record<string, unknown>;
+  /** Технические данные parser-а для backend-диагностики; не передаются LLM. */
+  __systemContext?: Record<string, string>;
   /** ARIA-связи с другими элементами, в том числе вне текущей ветви дерева. */
   relations?: UiRelation[];
   /** Распарсенные дочерние узлы, если элемент не является атомарным. */
@@ -58,29 +43,25 @@ export interface UiNode<Kind extends NodeKind = NodeKind> {
 }
 
 /** Интерактивный узел с зарегистрированным handler-ом и разрешёнными действиями. */
-export interface UiControlNode extends UiNode<'control'> {
+export interface UiControlNode extends UiNode {
   /** Непрозрачный action identifier, который LLM возвращает как controlId. */
   id: string;
   /** Точный XPath элемента для backend-логов и диагностики; не передаётся LLM. */
   __xpath: string;
-  /** Дискриминатор зарегистрированного интерактивного узла. */
-  kind: 'control';
   /** Возможности и текущее состояние зарегистрированного контрола. */
   control: ControlDescriptor;
 }
 
 /** Интерактивный элемент без зарегистрированного handler-а. */
-export interface UiUnhandledNode extends UiNode<'unhandled'> {
+export interface UiUnhandledNode extends UiNode {
   /** Непрозрачный identifier для диагностики и корреляции событий. */
   id: string;
   /** Точный XPath элемента для backend-логов и диагностики; не передаётся LLM. */
   __xpath: string;
-  /** Дискриминатор неподдержанного интерактивного узла. */
-  kind: 'unhandled';
 }
 
 /** Допустимый узел дерева: структурный, зарегистрированный control или unhandled. */
-export type UiTreeNode = UiNode<Exclude<NodeKind, 'control' | 'unhandled'>> | UiControlNode | UiUnhandledNode;
+export type UiTreeNode = UiNode | UiControlNode | UiUnhandledNode;
 
 /** Описание возможностей и состояния зарегистрированного контрола. */
 export interface ControlDescriptor {
@@ -88,7 +69,9 @@ export interface ControlDescriptor {
   type: string;
   /** Признак, что parser не должен обходить DOM-потомков контрола; backend-only. */
   __atomic: boolean;
-  /** Текущее значение, допустимое для передачи LLM после product-specific redaction. */
+  /** Расширяемый прикладной контекст, предоставленный handler-ом. */
+  context?: Record<string, unknown>;
+  /** Текущее значение контрола. */
   value?: string | boolean | number | null;
   /** Allow-list действий, которые executor может выполнить для контрола. */
   tools?: ControlTool[];
@@ -124,8 +107,8 @@ export interface UiEvent {
   __source?: 'user' | 'llm';
   /** Значение, которое требуется передать control-у для input/select действий. */
   value?: string | boolean | number | null;
-  /** Дополнительный backend-контекст события; не передаётся LLM. */
-  __context?: Record<string, string>;
+  /** Дополнительный технический контекст события; не передаётся LLM. */
+  __systemContext?: Record<string, string>;
 }
 
 /** Адаптер, который распознаёт DOM-элемент, описывает его и при необходимости выполняет действие. */
@@ -142,18 +125,14 @@ export interface ControlHandler {
 
 /** Настройки framework-agnostic DOM parser-а. */
 export interface ParserOptions {
-  /** Атрибуты, значения которых сохраняются в backend-only контексте узла. */
+  /** Атрибуты, значения которых сохраняются в расширяемом прикладном контексте узла. */
   contextAttributes?: readonly string[];
-  /** Атрибуты, явно отмечающие div как значимую UI-группу. */
-  groupAttributes?: readonly string[];
 }
 
 /** Семантическая ARIA-связь текущего узла с элементами по их HTML id. */
 export interface UiRelation {
   /** Тип ARIA-связи, из которой получены targets. */
   type: 'labelledby' | 'controls';
-  /** HTML id целевых узлов; сопоставляются с UiNode.domId и передаются LLM. */
+  /** HTML id целевых узлов; сопоставляются с UiNode.domId. */
   targetDomIds: string[];
-  /** Разрешённый текст target-элементов, например доступное имя из labelledby. */
-  text?: string;
 }

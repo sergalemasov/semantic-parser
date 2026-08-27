@@ -62,8 +62,8 @@ export class AppComponent implements AfterViewInit {
 </div>`;
 
   ngAfterViewInit(): void {
-    this.parser.registerRoot({ id: 'tab-invoices', kind: 'tab', name: 'Invoices', element: this.tabRoot!.nativeElement });
-    this.parser.registerRoot({ id: 'popup-actions', kind: 'popup', name: 'Invoice actions', element: this.popupRoot!.nativeElement });
+    this.parser.registerRoot({ id: 'tab-invoices', name: 'Invoices', element: this.tabRoot!.nativeElement });
+    this.parser.registerRoot({ id: 'popup-actions', name: 'Invoice actions', element: this.popupRoot!.nativeElement });
     this.invoiceJson = this.inspectExample(this.invoiceExample, 'example-invoice', 'Invoice list');
     this.expandJson = this.inspectExample(this.expandExample, 'example-expand', 'Payment details');
     this.relationJson = this.inspectExample(this.relationExample, 'example-controls', 'Popup trigger');
@@ -92,7 +92,7 @@ export class AppComponent implements AfterViewInit {
 
   private inspectExample(element: ElementRef<HTMLElement> | undefined, id: string, name: string): string {
     if (!element) return '';
-    return JSON.stringify(this.parser.inspect(element.nativeElement, { id, kind: 'page', name }), null, 2);
+    return JSON.stringify(this.parser.inspect(element.nativeElement, { id, name }), null, 2);
   }
 
   private async copyText(text: string): Promise<boolean> {
